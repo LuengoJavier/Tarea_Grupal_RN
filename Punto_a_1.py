@@ -35,6 +35,7 @@ num_bottleneck_layers = (depth - 4) // (2 * num_dense_blocks)
 
 # Parametros de normalizacion
 num_filters_bef_dense_block = 2 * growth_rate
+#Factor de compresión de 0.5
 compression_factor = 0.5
 
 # Preparacion de los datos
