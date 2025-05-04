@@ -161,8 +161,7 @@ if not os.path.isdir(save_dir):
     os.makedirs(save_dir)
 filepath = os.path.join(save_dir, model_name)
 
-# Callbacks para detener el entrenamiento temprano y guardar el mejor modelo (paciencia=15)
-early_stop = EarlyStopping(monitor='val_loss', patience=30, restore_best_weights=True, verbose=1)
+# Callbacks para guardar el mejor modelo y reducir la perdida
 
 checkpoint = ModelCheckpoint(filepath=filepath,monitor='val_acc',verbose=2,save_best_only=True)
 
@@ -170,7 +169,7 @@ lr_scheduler = LearningRateScheduler(lr_schedule)
 
 lr_reducer = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=4, min_lr=1e-6, verbose=1)
 
-callbacks = [checkpoint, lr_reducer, lr_scheduler, early_stop]
+callbacks = [checkpoint, lr_reducer, lr_scheduler]
 
 import time 
 
