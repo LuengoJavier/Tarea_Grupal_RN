@@ -1,3 +1,9 @@
+from tensorflow.keras.layers import (
+    Input, Activation, GlobalAveragePooling2D
+)
+import matplotlib.pyplot as plt
+from tensorflow.keras.models import Model
+from tensorflow.keras.optimizers import RMSprop
 from tensorflow.keras.layers import Dense, Conv2D, BatchNormalization
 from tensorflow.keras.layers import MaxPooling2D, AveragePooling2D
 from tensorflow.keras.layers import Input, Flatten, Dropout
@@ -9,55 +15,81 @@ from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.models import Model
 from tensorflow.keras.datasets import cifar10
 from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 import os
 import numpy as np
 import math
-from cargar_datos import extraer_imagenes_fer
+from tensorflow.keras.preprocessing import image
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
-# Carga de datos a través de la función
-X_train, X_test, y_train, y_test = extraer_imagenes_fer("FER")
+def extraer_imagenes(directorio):
+    imagenes_train, clases_train = [], []
+    imagenes_test, clases_test = [], []
+
+    for tipo_datos in ['train', 'test']:
+        ruta_tipo = os.path.join(directorio, tipo_datos)
+        clases = sorted(os.listdir(ruta_tipo))  # Asegura orden consistente de clases
+
+        for idx, clase in enumerate(clases):
+            ruta_clase = os.path.join(ruta_tipo, clase)
+            for foto in os.listdir(ruta_clase):
+                ruta_foto = os.path.join(ruta_clase, foto)
+                try:
+                    img = image.load_img(ruta_foto, target_size=(48, 48), color_mode='grayscale')
+                    img_array = np.array(img)
+
+                    if tipo_datos == 'train':
+                        imagenes_train.append(img_array)
+                        clases_train.append(idx)
+                    else:
+                        imagenes_test.append(img_array)
+                        clases_test.append(idx)
+                except Exception as e:
+                    print(f"Error al cargar {ruta_foto}: {e}")
+
+    # Convertir a arrays y normalizar
+    X_train = np.expand_dims(np.array(imagenes_train, dtype=np.float32) / 255, axis=-1)
+    X_test = np.expand_dims(np.array(imagenes_test, dtype=np.float32) / 255, axis=-1)
+    y_train = to_categorical(clases_train)
+    y_test = to_categorical(clases_test)
+
+    return X_train, X_test, y_train, y_test
+
+
 
 # Parametros de entrenamiento
 batch_size = 32
-# Número de epocas de entrenamiento
+#Epocas
 epochs = 200
 data_augmentation = True
 
-# Parametros de arquitectura
+# Parametros de la arquitectura
 num_classes = 7
 num_dense_blocks = 4
 use_max_pool = False
-
-# Parametros de crecimiento
 growth_rate = 12
 depth = 100
 num_bottleneck_layers = (depth - 4) // (2 * num_dense_blocks)
-
-# Parametros de normalizacion
 num_filters_bef_dense_block = 2 * growth_rate
-#Factor de compresión de 0.7
+
+# Factor de compresion
 compression_factor = 0.7
 
-# Preparacion de los datos
-input_shape = X_train.shape[1:]
+# Carga de datos a través de la función
+x_train, x_test, y_train, y_test = extraer_imagenes("FER")
 
-# Normalizacion de los datos
-X_train = X_train.astype('float32') / 255
-X_test_test = X_test.astype('float32') / 255
-print('X_train shape:', X_train.shape)
+# Dimensiones de la entrada
+input_shape = x_train.shape[1:]
+
+# Se muestran las dimensiones
+print('Dimensiones de la entrada:')
+print('x_train shape:', x_train.shape)
 print('y_train shape:', y_train.shape)
-print(X_train.shape[0], 'train samples')
-print(X_test.shape[0], 'test samples')
+print(x_train.shape[0], 'train samples')
+print(x_test.shape[0], 'test samples')
 
-# convert class vectors to binary class matrices.
-y_train = to_categorical(y_train, num_classes)
-y_test = to_categorical(y_test, num_classes)
-
+# Función de aprendizaje
 def lr_schedule(epoch):
-    """Learning Rate Schedule
-    Learning rate is scheduled to be reduced after 80, 120, 160, 180 epochs.
-    Called automatically every epoch as part of callbacks during training.
-    """
     lr = 1e-3
     if epoch > 180:
         lr *= 0.5e-3
@@ -70,8 +102,10 @@ def lr_schedule(epoch):
     print('Learning rate: ', lr)
     return lr
 
-# start model definition
-# densenet CNNs (composite function) are made of BN-ReLU-Conv2D
+
+# Definicion del modelo
+
+# DesNet Conv2D-BN-ReLU-Conv2D
 inputs = Input(shape=input_shape)
 x = BatchNormalization()(inputs)
 x = Activation('relu')(x)
@@ -121,20 +155,23 @@ model.compile(loss='categorical_crossentropy',optimizer=RMSprop(1e-3),metrics=['
 model.summary()
 
 # prepare model model saving directory
-save_dir = os.path.join(os.getcwd(), 'saved_models_'+ str(epochs) +'_epocas')
-model_name = 'cifar10_densenet_model.{epoch:02d}.h5'
+save_dir = os.path.join(os.getcwd(), 'saved_models_'+ str(epochs) +'_epocas'+'_0.7_compression_factor')
+model_name = 'FER2013_densenet_model_compression_factor_0.7.{epoch:02d}.h5'
 if not os.path.isdir(save_dir):
     os.makedirs(save_dir)
 filepath = os.path.join(save_dir, model_name)
 
-# prepare callbacks for model saving and for learning rate reducer
+# Callbacks para detener el entrenamiento temprano y guardar el mejor modelo (paciencia=15)
+early_stop = EarlyStopping(monitor='val_loss', patience=30, restore_best_weights=True, verbose=1)
+
 checkpoint = ModelCheckpoint(filepath=filepath,monitor='val_acc',verbose=2,save_best_only=True)
 
 lr_scheduler = LearningRateScheduler(lr_schedule)
 
-lr_reducer = ReduceLROnPlateau(factor=np.sqrt(0.1),cooldown=0,patience=5,min_lr=0.5e-6)
+lr_reducer = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=4, min_lr=1e-6, verbose=1)
 
-callbacks = [checkpoint, lr_reducer, lr_scheduler]
+callbacks = [checkpoint, lr_reducer, lr_scheduler, early_stop]
+
 
 import time 
 
@@ -143,8 +180,8 @@ start=time.time()
 # run training, with or without data augmentation
 if not data_augmentation:
     print('Not using data augmentation.')
-    model.fit(X_train, y_train,batch_size=batch_size,epochs=epochs,
-              validation_data=(X_test, y_test),shuffle=True,callbacks=callbacks)
+    history = model.fit(x_train, y_train,batch_size=batch_size,epochs=epochs,
+              validation_data=(x_test, y_test),shuffle=True,callbacks=callbacks)
 else:
     print('Using real-time data augmentation.')
     # preprocessing  and realtime data augmentation
@@ -162,16 +199,39 @@ else:
 
     # compute quantities required for featurewise normalization
     # (std, mean, and principal components if ZCA whitening is applied)
-    datagen.fit(X_train)
+    datagen.fit(x_train)
 
-    steps_per_epoch = math.ceil(len(X_train) / batch_size)
+    steps_per_epoch = math.ceil(len(x_train) / batch_size)
     # fit the model on the batches generated by datagen.flow().
-    model.fit(x=datagen.flow(X_train, y_train, batch_size=batch_size),verbose=2,epochs=epochs,
-              validation_data=(X_test, y_test),steps_per_epoch=steps_per_epoch,callbacks=callbacks)
+    history = model.fit(x=datagen.flow(x_train, y_train, batch_size=batch_size),verbose=1,epochs=epochs,
+              validation_data=(x_test, y_test),steps_per_epoch=steps_per_epoch,callbacks=callbacks)
 
 fin=time.time()
 print('(RUNNING TIME: ' + str(fin-start) )
 # score trained model
-scores = model.evaluate(X_test, y_test, verbose=0)
+scores = model.evaluate(x_test, y_test, verbose=0)
 print('Test loss:', scores[0])
 print('Test accuracy:', scores[1])
+
+##-------------------
+plt.plot(history.history['loss'])
+plt.plot(history.history['val_loss'])
+plt.title('Funcion de Perdida')
+plt.ylabel('Valor perdida')
+plt.xlabel('Epocas')
+plt.legend(['Entrenamiento', 'Test'], loc='best')
+plt.savefig('funcion_perdida_modelo_densenet_0.7.png')
+##-------------------
+# Verifica si es 'accuracy' o 'acc'
+acc_key = 'accuracy' if 'accuracy' in history.history else 'acc'
+val_acc_key = 'val_accuracy' if 'val_accuracy' in history.history else 'val_acc'
+
+# Guardar exactitud
+plt.figure()
+plt.plot(history.history[acc_key])
+plt.plot(history.history[val_acc_key])
+plt.title('Exactitud del modelo')
+plt.ylabel('Exactitud')
+plt.xlabel('Epocas')
+plt.legend(['Entrenamiento', 'Validacion'], loc='best')
+plt.savefig('funcion_exactitud_modelo_densenet_0.7.png')

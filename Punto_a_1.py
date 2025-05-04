@@ -58,7 +58,7 @@ def extraer_imagenes(directorio):
 
 
 # Parametros de entrenamiento
-batch_size = 64
+batch_size = 32
 #Epocas
 epochs = 200
 data_augmentation = True
@@ -154,11 +154,6 @@ model = Model(inputs=inputs, outputs=outputs)
 model.compile(loss='categorical_crossentropy',optimizer=RMSprop(1e-3),metrics=['acc'])
 model.summary()
 
-# Callbacks para detener el entrenamiento temprano y guardar el mejor modelo (paciencia=15)
-callbacks = [
-    EarlyStopping(monitor='val_loss', patience=15, restore_best_weights=True, verbose=1)
-]
-
 # prepare model model saving directory
 save_dir = os.path.join(os.getcwd(), 'saved_models_'+ str(epochs) +'_epocas'+'_0.3_compression_factor')
 model_name = 'FER2013_densenet_model_compression_factor_0.3.{epoch:02d}.h5'
@@ -166,14 +161,16 @@ if not os.path.isdir(save_dir):
     os.makedirs(save_dir)
 filepath = os.path.join(save_dir, model_name)
 
-# prepare callbacks for model saving and for learning rate reducer
+# Callbacks para detener el entrenamiento temprano y guardar el mejor modelo (paciencia=15)
+early_stop = EarlyStopping(monitor='val_loss', patience=30, restore_best_weights=True, verbose=1)
+
 checkpoint = ModelCheckpoint(filepath=filepath,monitor='val_acc',verbose=2,save_best_only=True)
 
 lr_scheduler = LearningRateScheduler(lr_schedule)
 
-lr_reducer = ReduceLROnPlateau(factor=np.sqrt(0.1),cooldown=0,patience=5,min_lr=0.5e-6)
+lr_reducer = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=4, min_lr=1e-6, verbose=1)
 
-callbacks = [checkpoint, lr_reducer, lr_scheduler]
+callbacks = [checkpoint, lr_reducer, lr_scheduler, early_stop]
 
 import time 
 
