@@ -38,11 +38,9 @@ def extraer_imagenes(directorio):
     for tipo_datos in ['train', 'test']:
         ruta_tipo = os.path.join(directorio, tipo_datos)
         clases = sorted(os.listdir(ruta_tipo))  # Asegura orden consistente de clases
-        print(f"Clases encontradas: {clases}")
 
         for idx, clase in enumerate(clases):
             ruta_clase = os.path.join(ruta_tipo, clase)
-            print(f"Cargando clase: {clase} ({idx})")
             for foto in os.listdir(ruta_clase):
                 ruta_foto = os.path.join(ruta_clase, foto)
                 try:
@@ -247,7 +245,7 @@ def main():
     
     plt.figure(figsize=(12, 5))#curvas de entrenamiento
     
-    # Grqfico de precisión
+    # Grafico de precisión
     plt.subplot(1, 2, 1)
     plt.plot(history.history['accuracy'])
     plt.plot(history.history['val_accuracy'])
