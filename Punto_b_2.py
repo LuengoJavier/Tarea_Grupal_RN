@@ -21,10 +21,10 @@ batch_size = 64
 epochs = 200
 data_augmentation = True
 n_clases = 7 #clases 
-subtract_pixel_mean = True
+subtract_pixel_mean = True #Mejora accuracy
 
 # Para ResNet V2, la profundidad se calcula diferente
-n = 17  
+n = 17
 depth = n * 9 + 2  # 155 capas
 
 fer_path = "/home/cursos/ima543_2025_1/ima543_share/FER"  #Ruta Khipu
@@ -100,9 +100,12 @@ def lr_schedule(epoch): #Función tasa de aprendizaje
 def resnet_layer(inputs, num_filters=16, kernel_size=3, strides=1,
                  activation='relu', batch_normalization=True, conv_first=True):
     """2D Convolution-Batch Normalization-Activation stack builder"""
-    conv = Conv2D(num_filters, kernel_size=kernel_size, strides=strides,
-                  padding='same', kernel_initializer='he_normal',
-                  kernel_regularizer=l2(1e-4))
+    conv = Conv2D(num_filters,
+                  kernel_size =kernel_size,
+                  strides     =strides,
+                  padding     ='same',
+                  kernel_initializer ='he_normal',
+                  kernel_regularizer =l2(1e-4))
 
     x = inputs
     if conv_first:
@@ -125,21 +128,21 @@ def resnet_v2(input_shape, depth, n_clases=7):
     if (depth - 2) % 9 != 0:
         raise ValueError('depth should be 9n+2 (e.g. 29, 47, 56, 92, 110, 164)')
     
-    # Empezar definición del modelo
+    #definición del modelo
     num_filters_in = 16
     num_res_blocks = int((depth - 2) / 9)
 
     inputs = Input(shape=input_shape)
     
     # v2 realiza Conv2D con BN-ReLU en la entrada antes de dividirse en caminos
-    x = resnet_layer(inputs=inputs, num_filters=num_filters_in, conv_first=True)
+    x = resnet_layer(inputs=inputs)
     
-    for stage in range(3):
+    for stack in range(3):
         for res_block in range(num_res_blocks):
             activation = 'relu'
             batch_normalization = True
             strides = 1
-            if stage == 0:
+            if stack == 0:
                 # Primer stage mantiene resolución, duplica filtros
                 num_filters_out = num_filters_in * 4
                 # Primera capa y primer stage
@@ -155,45 +158,16 @@ def resnet_v2(input_shape, depth, n_clases=7):
                     strides = 2
             
             # Bloque residual con pre-activación (BN-ReLU-Conv)
-            # Primera parte del bloque
-            y = resnet_layer(
-                inputs=x,
-                num_filters=num_filters_in,
-                kernel_size=1,
-                strides=strides,
-                activation=activation,
-                batch_normalization=batch_normalization,
-                conv_first=False
-            )
-            
-            # Segunda parte del bloque
-            y = resnet_layer(
-                inputs=y,
-                num_filters=num_filters_in,
-                conv_first=False
-            )
-            
-            # Tercera parte del bloque
-            y = resnet_layer(
-                inputs=y,
-                num_filters=num_filters_out,
-                kernel_size=1,
-                conv_first=False
-            )
-            
+            y = resnet_layer(inputs=x,num_filters=num_filters_in,kernel_size=1,strides=strides,
+                             activation=activation,batch_normalization=batch_normalization,conv_first=False)# Primera parte del bloque
+            y = resnet_layer(inputs=y,num_filters=num_filters_in,conv_first=False)# Segunda parte 
+            y = resnet_layer(inputs=y,num_filters=num_filters_out,kernel_size=1,conv_first=False)# Tercera parte 
             # Proyección de la conexión residual si cambia dimensiones
             if res_block == 0:
                 # Proyección lineal para ajustar dimensiones
-                x = resnet_layer(
-                    inputs=x,
-                    num_filters=num_filters_out,
-                    kernel_size=1,
-                    strides=strides,
-                    activation=None,
-                    batch_normalization=False
-                )
+                x = resnet_layer(inputs=x,num_filters=num_filters_out,kernel_size=1,
+                    strides=strides,activation=None,batch_normalization=False)
             
-            # Suma con el camino directo (sin activación después)
             x = add([x, y])
         
         num_filters_in = num_filters_out
@@ -207,64 +181,60 @@ def resnet_v2(input_shape, depth, n_clases=7):
     y = Flatten()(x)
     outputs = Dense(n_clases, activation='softmax', kernel_initializer='he_normal')(y)
 
-    # Instanciar modelo
+    #Intalación del modelo
     model = Model(inputs=inputs, outputs=outputs)
     return model
 
-def main():
-    """Función principal para cargar datos, crear modelo, entrenar y evaluar"""    
-    # Cargar datos usando el método alternativo
-    X_train, X_val, X_test, y_train, y_val, y_test = extraer_imagenes(fer_path)
+X_train, X_val, X_test, y_train, y_val, y_test = extraer_imagenes(fer_path)
     
     # Definir la forma de la entrada (48x48x1 para imágenes en escala de grises)
-    input_shape = (48, 48, 1)
+input_shape = (48, 48, 1)
     
     # Crear modelo ResNet V2
-    model = resnet_v2(input_shape=input_shape, depth=depth, n_clases=n_clases)
-    model.summary()
+model = resnet_v2(input_shape=input_shape, depth=depth, n_clases=n_clases)
+model.summary()
     
     # Preparar directorio para guardar el modelo
-    save_dir = os.path.join(os.getcwd(), 'saved_models')
-    model_name = f'fer2013_resnet{depth}v2.h5'  # Cambio a v2
-    if not os.path.isdir(save_dir):
-        os.makedirs(save_dir)
-    filepath = os.path.join(save_dir, model_name)
+save_dir = os.path.join(os.getcwd(), 'saved_models')
+model_name = f'fer2013_resnet{depth}v2.h5'  # Cambio a v2
+if not os.path.isdir(save_dir):
+    os.makedirs(save_dir)
+filepath = os.path.join(save_dir, model_name)
     
-    # Guardar también los pesos por separado (según requisitos)
-    weights_path = os.path.join(save_dir, f'fer2013_resnet{depth}v2_weights.h5')
+# Guardar también los pesos por separado (según requisitos)
+weights_path = os.path.join(save_dir, f'fer2013_resnet{depth}v2_weights.h5')
     
-    # Preparar callbacks
-    checkpoint = ModelCheckpoint(filepath=filepath, 
-                               monitor='val_accuracy',
-                               verbose=1, 
-                               save_best_only=True)
-    lr_scheduler = LearningRateScheduler(lr_schedule)
-    lr_reducer = ReduceLROnPlateau(factor=np.sqrt(0.1),
+# Preparar callbacks
+checkpoint = ModelCheckpoint(filepath=filepath, 
+                            monitor='val_accuracy',
+                            verbose=1, 
+                            save_best_only=True)
+lr_scheduler = LearningRateScheduler(lr_schedule)
+lr_reducer = ReduceLROnPlateau(factor=np.sqrt(0.1),
                                  cooldown=0,
                                  patience=5,
                                  min_lr=0.5e-6)
     
-    callbacks = [checkpoint, lr_reducer, lr_scheduler]
+callbacks = [checkpoint, lr_reducer, lr_scheduler]
     
     # Compilo
-    model.compile(loss='categorical_crossentropy',
+model.compile(loss='categorical_crossentropy',
                 optimizer=Adam(learning_rate=lr_schedule(0)),
                 metrics=['accuracy'])
     
-    #tiempo inicial
-    start_time = time.time()
+#tiempo inicial
+start_time = time.time()
     
-    # Configurar data augmentation si está habilitado
-    if data_augmentation:
-        datagen = ImageDataGenerator(
-            width_shift_range=0.1,
-            height_shift_range=0.1,
-            horizontal_flip=True)
+# Configurar data augmentation si está habilitado
+if data_augmentation:
+    datagen = ImageDataGenerator(
+        width_shift_range=0.1,
+        height_shift_range=0.1,
+        horizontal_flip=True)
+    
+    datagen.fit(X_train) #Para ajustar el generados
         
-        # Ajustar el generador
-        datagen.fit(X_train)
-        
-        history = model.fit(
+    history = model.fit( #Entreno el modelo
             datagen.flow(X_train, y_train, batch_size=batch_size),
             epochs=epochs,
             validation_data=(X_val, y_val),
@@ -272,71 +242,64 @@ def main():
             steps_per_epoch=math.ceil(X_train.shape[0] / batch_size),
             verbose=1
         )
-    else:
+else:
         
-        history = model.fit(
+    history = model.fit(
             X_train, y_train,
             batch_size=batch_size,
             epochs=epochs,
             validation_data=(X_val, y_val),
             shuffle=True,
             callbacks=callbacks,
-            verbose=1
-        )
+            verbose=1)
     
-    #tiempo total
-    end_time = time.time()
-    elapsed_time = end_time - start_time
-    hours, remainder = divmod(elapsed_time, 3600)
-    minutes, seconds = divmod(remainder, 60)
-    print(f"\nTiempo de entrenamiento: {int(hours)}h {int(minutes)}m {int(seconds)}s")
+#tiempo total
+end_time = time.time()
+elapsed_time = end_time - start_time
+hours, remainder = divmod(elapsed_time, 3600)
+minutes, seconds = divmod(remainder, 60)
+print(f"\nTiempo de entrenamiento: {int(hours)}h {int(minutes)}m {int(seconds)}s")
     
-    # Evaluar modelo
-    scores = model.evaluate(X_test, y_test, batch_size=batch_size, verbose=1)
-    print(f'Test loss: {scores[0]:.4f}')
-    print(f'Test accuracy: {scores[1]:.4f}')
+#Para el calculo de accuracy y loss
+scores = model.evaluate(X_test, y_test, batch_size=batch_size, verbose=1)
+print(f'Test loss: {scores[0]:.4f}')
+print(f'Test accuracy: {scores[1]:.4f}')
     
-    # Guardar modelo completo
-    model.save(filepath)
+model.save(filepath) #Guardamos el modelo
     
-    # Guardar también los pesos por separado (según requisitos)
-    model.save_weights(weights_path)
+model.save_weights(weights_path) #Se gusrdan los pesos
     
-    plt.figure(figsize=(12, 5))#curvas de entrenamiento
+plt.figure(figsize=(12, 5))#curvas de entrenamiento
     
-    # Grafico de precisión
-    plt.subplot(1, 2, 1)
-    plt.plot(history.history['accuracy'])
-    plt.plot(history.history['val_accuracy'])
-    plt.title('Precisión del modelo ResNet V2')
-    plt.ylabel('Precisión')
-    plt.xlabel('Época')
-    plt.legend(['Entrenamiento', 'Validación'], loc='lower right')
+# Grafico de precisión
+plt.subplot(1, 2, 1)
+plt.plot(history.history['accuracy'])
+plt.plot(history.history['val_accuracy'])
+plt.title('Precisión del modelo ResNet V2')
+plt.ylabel('Precisión')
+plt.xlabel('Época')
+plt.legend(['Entrenamiento', 'Validación'], loc='lower right')
     
-    # Grafica de pérdida
-    plt.subplot(1, 2, 2)
-    plt.plot(history.history['loss'])
-    plt.plot(history.history['val_loss'])
-    plt.title('Pérdida del modelo ResNet V2')
-    plt.ylabel('Pérdida')
-    plt.xlabel('Época')
-    plt.legend(['Entrenamiento', 'Validación'], loc='upper right')
+# Grafica de pérdida
+plt.subplot(1, 2, 2)
+plt.plot(history.history['loss'])
+plt.plot(history.history['val_loss'])
+plt.title('Pérdida del modelo ResNet V2')
+plt.ylabel('Pérdida')
+plt.xlabel('Época')
+plt.legend(['Entrenamiento', 'Validación'], loc='upper right')
     
-    plt.tight_layout()
-    plt.savefig('resnet_v2_fer2013_train.png')
-    
-    performance = {
-        'model': f'ResNet{depth}v2',  # Cambio a v2
-        'training_time_seconds': elapsed_time,
-        'training_time_formatted': f"{int(hours)}h {int(minutes)}m {int(seconds)}s",
-        'test_loss': scores[0],
-        'test_accuracy': scores[1],
-        'epochs': epochs
-    }
-    
-    with open('resnet_v2_results.txt', 'w') as f:  # Cambio a v2
-        for key, value in performance.items():
-            f.write(f"{key}: {value}\n")
+plt.tight_layout()
+plt.savefig('resnet_v2_fer2013_train.png')
 
-if __name__ == "__main__":
-    main()
+performance = {'model': f'ResNet{depth}v2',  # Cambio a v2
+            'training_time_seconds': elapsed_time,
+            'training_time_formatted': f"{int(hours)}h {int(minutes)}m {int(seconds)}s",
+            'test_loss': scores[0],
+            'test_accuracy': scores[1],
+            'epochs': epochs} #Metricas de rendimiento
+    
+#Guardamos los resultados en un txt
+with open('resnet_v2_results.txt', 'w') as f:  # Cambio a v2
+    for key, value in performance.items():
+        f.write(f"{key}: {value}\n")
