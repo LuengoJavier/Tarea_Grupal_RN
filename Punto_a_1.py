@@ -20,7 +20,7 @@ import os
 import numpy as np
 import math
 from tensorflow.keras.preprocessing import image
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 
 def extraer_imagenes(directorio):
     imagenes_train, clases_train = [], []
@@ -189,9 +189,9 @@ else:
         featurewise_std_normalization=False,  # divide inputs by std of dataset
         samplewise_std_normalization=False,  # divide each input by its std
         zca_whitening=False,  # apply ZCA whitening
-        rotation_range=0,  # randomly rotate images in the range (deg 0 to 180)
-        width_shift_range=0.1,  # randomly shift images horizontally
-        height_shift_range=0.1,  # randomly shift images vertically
+        rotation_range=20,  # randomly rotate images in the range (deg 0 to 180)
+        width_shift_range=0.15,  # randomly shift images horizontally
+        height_shift_range=0.15,  # randomly shift images vertically
         horizontal_flip=True,  # randomly flip images
         vertical_flip=False)  # randomly flip images
 
